@@ -7,9 +7,9 @@ It runs in the browser on any phone or computer, works offline, and can be added
 
 | Tab | Helps with |
 |---|---|
-| 🏠 **Today** | Big, clear day and date. Reminders due today and overdue. Daily routine checklist with progress. Upcoming birthdays and appointments. One-tap "Where I put…" and note capture. |
+| 🏠 **Today** | **🔑 My things:** where his keys are right now, in big text. Tap **Moved** and choose a spot (Jacket pocket, Car, Key hook… his own recent spots show first). **💛 My family:** Lexi, Zach and Figgy, plus one saved detail about one of them each day as a gentle refresher. Big, clear day and date. Reminders due today and overdue. Daily routine checklist with progress. Upcoming birthdays and appointments. One-tap "Where I put…" and note capture. |
 | 📝 **Remember** | **Where things are** (passport → top desk drawer, saved with when it was last updated) and **Notes** (pin important ones, add tags). Search across both. |
-| 👥 **People** | Names plus how he knows each person and details worth remembering (partner's and kids' names, what you last talked about). Can also add them to Practice to learn their names. |
+| 👥 **People** | **My family** at the top. Each person has a page of *little details* with ready-made ideas to tap (Lexi and Zach: favourite colour, best friend, teacher, shoe size, has asked for…; Figgy: coffee order, ring size, favourite flowers, mentioned wanting…) and a birthday. Any detail can become a 🎯 practice card. Also other people: names plus how he knows each person and details worth remembering (partner's and kids' names, what you last talked about). Can also add them to Practice to learn their names. |
 | 📅 **Dates** | Birthdays (with "turns 66"), anniversaries and appointments, sorted by how many days away they are. |
 | 🎯 **Practice** | Flashcards with spaced repetition. Things he knows come back less often and tricky ones come back sooner. A few minutes a day helps new information stick. |
 | ⚙️ **Settings** | Name, reminder alerts, backup and restore, and erase everything. |

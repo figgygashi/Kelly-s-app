@@ -1,5 +1,5 @@
 // Caches the app so it opens instantly and works offline.
-const CACHE = 'memory-v1';
+const CACHE = 'memory-v2';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 

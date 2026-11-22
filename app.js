@@ -28,24 +28,50 @@ function blank() {
     settings: { name: 'Kelly' },
     routines: [
       { id: uid(), emoji: '💧', title: 'Drink a glass of water', time: '08:00', days: [0, 1, 2, 3, 4, 5, 6] },
-      { id: uid(), emoji: '🔑', title: 'Keys, wallet, phone before leaving', time: '', days: [1, 2, 3, 4, 5] },
+      { id: uid(), emoji: '🔑', title: 'Keys, wallet, phone before leaving', time: '', days: [0, 1, 2, 3, 4, 5, 6] },
+      { id: uid(), emoji: '🪝', title: 'Keys back in their spot when I get home', time: '', days: [0, 1, 2, 3, 4, 5, 6] },
     ],
     doneLog: {},   // { 'YYYY-MM-DD': [routineId, ...] }
     reminders: [], // { id, text, due: 'YYYY-MM-DDTHH:MM' | '', done, doneAt, notified }
     notes: [],     // { id, text, tags, pinned, created }
-    places: [],    // { id, item, location, updated }
-    people: [],    // { id, name, relation, details, updated }
+    places: [],    // { id, item, location, updated, pinned, history: [location, ...] }
+    people: [],    // { id, name, relation, emoji, family, details, facts: [{ id, topic, text, added, cardId }], updated }
     dates: [],     // { id, label, date: 'YYYY-MM-DD', type, yearly }
     cards: [],     // { id, front, back, box, due: 'YYYY-MM-DD' }
   };
 }
 
+// Kelly's own people and things, added once (and to older saved data too).
+const FAMILY = [
+  { name: 'Lexi', relation: 'My daughter', emoji: '👧' },
+  { name: 'Zach', relation: 'My son', emoji: '👦' },
+  { name: 'Figgy', relation: 'My fiancé', emoji: '💍' },
+];
+
+function migrate(d) {
+  d.settings ||= { name: 'Kelly' };
+  if (!d.settings.familySeeded) {
+    for (const f of FAMILY) {
+      const ex = d.people.find((p) => p.name.toLowerCase() === f.name.toLowerCase());
+      if (ex) Object.assign(ex, { family: true, emoji: ex.emoji || f.emoji });
+      else d.people.push({ id: uid(), ...f, family: true, details: '', facts: [], updated: Date.now() });
+    }
+    const keys = d.places.find((p) => /^keys?$/i.test(p.item));
+    if (keys) keys.pinned = true;
+    else d.places.push({ id: uid(), item: 'Keys', location: '', pinned: true, history: [], updated: 0 });
+    d.settings.familySeeded = true;
+  }
+  d.people.forEach((p) => { p.facts ||= []; });
+  d.places.forEach((p) => { p.history ||= []; });
+  return d;
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...blank(), ...JSON.parse(raw) };
+    if (raw) return migrate({ ...blank(), ...JSON.parse(raw) });
   } catch (e) { /* storage blocked or corrupt — fall back to fresh data */ }
-  return blank();
+  return migrate(blank());
 }
 
 let db = load();
@@ -55,7 +81,7 @@ function save() {
   catch (e) { toast('⚠️ Could not save. Try backing up from Settings.'); }
 }
 
-const state = { view: 'today', q: { remember: '', people: '' }, review: null };
+const state = { view: 'today', arg: '', q: { remember: '', people: '' }, review: null };
 
 /* ---------- Helpers ---------- */
 
@@ -67,6 +93,44 @@ function timeAgo(ts) {
   if (d < 60) return `${Math.round(d / 7)} weeks ago`;
   if (d < 730) return `${Math.round(d / 30)} months ago`;
   return `${Math.round(d / 365)} years ago`;
+}
+
+function timeAgoFine(ts) {
+  const mins = Math.round((Date.now() - ts) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 12 * 60 && daysBetween(new Date(ts), new Date()) === 0) return `${Math.round(mins / 60)} hr ago`;
+  return timeAgo(ts);
+}
+
+const THING_ICONS = [[/key/i, '🔑'], [/wallet|purse/i, '👛'], [/phone/i, '📱'], [/glasses|sunnies/i, '👓'],
+  [/car|park/i, '🚗'], [/passport/i, '🛂'], [/charger|cable/i, '🔌'], [/remote/i, '📺'], [/headphone|airpod/i, '🎧']];
+const thingIcon = (name) => (THING_ICONS.find(([re]) => re.test(name)) || [0, '📦'])[1];
+const SPOTS = ['Key hook', 'Jacket pocket', 'Jeans pocket', 'Bag', 'Car', 'Kitchen counter', 'Bedside table', 'Desk'];
+
+const KID_TOPICS = ['Favourite food', 'Favourite colour', 'Best friend', 'Teacher', 'Class / school', 'Clothes size',
+  'Shoe size', 'Allergies', 'Into right now', 'Has asked for', 'Coming up', 'Things that upset them', 'Proud moment'];
+const PARTNER_TOPICS = ['Coffee / drink order', 'Favourite food', 'Favourite flowers', 'Favourite restaurant',
+  'Ring size', 'Clothes size', 'Mentioned wanting', 'Love language', 'Coming up', 'Pet peeves', 'Friends\' names',
+  'Things that make them happy', 'Our special dates'];
+const GENERAL_TOPICS = ['Partner', 'Kids', 'Job', 'Lives in', 'Interests', 'Last talked about'];
+function topicsFor(p) {
+  const r = (p.relation || '').toLowerCase();
+  if (/daughter|son|child|kid|step/.test(r)) return KID_TOPICS;
+  if (/fianc|partner|wife|husband|girlfriend|boyfriend|spouse/.test(r)) return PARTNER_TOPICS;
+  return GENERAL_TOPICS;
+}
+
+// One little detail about the family each day, as a gentle refresher.
+function factOfTheDay() {
+  const all = db.people.filter((p) => p.family).flatMap((p) => p.facts.map((f) => ({ p, f })));
+  if (!all.length) return null;
+  const n = Math.floor(startOfDay(new Date()) / DAY);
+  return all[n % all.length];
+}
+
+function factLine(f) {
+  return f.topic ? `<b>${esc(f.topic)}:</b> ${esc(f.text)}` : esc(f.text);
 }
 
 function dueInfo(s) {
@@ -139,7 +203,10 @@ const views = {
     const rems = db.reminders.filter((r) => !r.done)
       .sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
     const soon = datesWithNext().filter((d) => d.away >= 0 && d.away <= 30).slice(0, 5);
-    const lastPlace = [...db.places].sort((a, b) => b.updated - a.updated)[0];
+    const lastPlace = [...db.places].filter((p) => !p.pinned && p.location).sort((a, b) => b.updated - a.updated)[0];
+    const pinned = db.places.filter((p) => p.pinned);
+    const family = db.people.filter((p) => p.family);
+    const fotd = factOfTheDay();
     const dueCards = db.cards.filter((c) => c.due <= dayKey()).length;
 
     return `
@@ -148,6 +215,31 @@ const views = {
         <h1>${now.toLocaleDateString(undefined, { weekday: 'long' })}</h1>
         <p class="big-date">${now.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</p>
       </section>
+
+      <section class="card">
+        <div class="sec-head"><h2>🔑 My things</h2><button class="btn small" data-action="add-place" data-pin="1">+ Add</button></div>
+        ${pinned.length ? `<ul class="list">${pinned.map((p) => `
+          <li class="item thing" data-action="move-item" data-id="${p.id}">
+            <span class="emoji">${thingIcon(p.item)}</span>
+            <div class="body">
+              <div class="sub"><b>${esc(p.item)}</b></div>
+              <div class="where">${p.location ? esc(p.location) : '<span class="hint">Tap to save where they are</span>'}</div>
+              ${p.location ? `<div class="sub">saved ${timeAgoFine(p.updated)}</div>` : ''}
+            </div>
+            <span class="btn small">Moved</span>
+          </li>`).join('')}</ul>
+          <p class="hint">Tip: tap the moment you put them down, or give them one home spot.</p>`
+          : `<p class="empty">Add things you often lose, like keys, wallet or glasses.</p>`}
+      </section>
+
+      ${family.length ? `
+      <section class="card">
+        <div class="sec-head"><h2>💛 My family</h2><a href="#people" class="btn small">People</a></div>
+        <div class="family-row">${family.map((p) => `
+          <a class="fam" href="#person/${p.id}"><span class="avatar big">${esc(p.emoji || initials(p.name))}</span>${esc(p.name)}</a>`).join('')}</div>
+        ${fotd ? `<p class="fact">💡 About <a href="#person/${fotd.p.id}">${esc(fotd.p.name)}</a>, ${factLine(fotd.f)}</p>`
+          : `<p class="hint">Tap someone to save little details about them: favourite things, sizes, friends, what's coming up.</p>`}
+      </section>` : ''}
 
       ${soon.length ? `
       <section class="card">
@@ -206,7 +298,7 @@ const views = {
         ${places.length ? `<ul class="list">${places.map((p) => `
           <li class="item"><div class="body" data-action="edit-place" data-id="${p.id}">
             <div class="title">${esc(p.item)}</div>
-            <div class="sub">→ ${esc(p.location)} · <i>${timeAgo(p.updated)}</i></div>
+            <div class="sub">${p.location ? `→ ${esc(p.location)} · <i>${timeAgoFine(p.updated)}</i>` : '<i>not saved yet</i>'}${p.pinned ? ' · 📌 on Today' : ''}</div>
           </div></li>`).join('')}</ul>`
           : `<p class="empty">${q ? 'No matches.' : 'Save where you put things: passport, spare key, chargers, the car…'}</p>`}
       </section>
@@ -228,23 +320,72 @@ const views = {
 
   people() {
     const q = state.q.people;
-    const list = db.people.filter((p) => matches(q, p.name, p.relation, p.details))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    return `
-      <h1 class="page-title">People</h1>
-      <input class="search" type="search" data-search="people" placeholder="🔍 Search names, places, details…" value="${esc(q)}">
-      <section class="card">
-        <div class="sec-head"><h2>People I know</h2><button class="btn small" data-action="add-person">+ Add</button></div>
-        ${list.length ? `<ul class="list">${list.map((p) => `
-          <li class="item" data-action="edit-person" data-id="${p.id}" style="cursor:pointer">
-            <div class="avatar">${esc(initials(p.name))}</div>
+    const list = db.people.filter((p) => matches(q, p.name, p.relation, p.details,
+      ...p.facts.map((f) => `${f.topic} ${f.text}`))).sort((a, b) => a.name.localeCompare(b.name));
+    const row = (p) => `
+          <li class="item" data-action="open-person" data-id="${p.id}" style="cursor:pointer">
+            <div class="avatar">${esc(p.emoji || initials(p.name))}</div>
             <div class="body">
               <div class="title">${esc(p.name)}</div>
-              ${p.relation ? `<div class="sub"><b>${esc(p.relation)}</b></div>` : ''}
-              ${p.details ? `<div class="sub">${esc(p.details)}</div>` : ''}
-            </div></li>`).join('')}</ul>`
-          : `<p class="empty">${q ? 'No matches.' : 'Add people with a few details: how you know them, partner and kids\' names, what you last talked about.'}</p>`}
+              ${p.relation ? `<div class="sub"><b>${esc(p.relation)}</b>${p.facts.length ? ` · ${p.facts.length} detail${p.facts.length === 1 ? '' : 's'}` : ''}</div>` : ''}
+              ${q ? p.facts.filter((f) => matches(q, f.topic, f.text)).slice(0, 3).map((f) => `<div class="sub">${factLine(f)}</div>`).join('') : ''}
+            </div><span class="chev">›</span></li>`;
+    const fam = list.filter((p) => p.family);
+    const others = list.filter((p) => !p.family);
+    return `
+      <h1 class="page-title">People</h1>
+      <input class="search" type="search" data-search="people" placeholder="🔍 Search names and details…" value="${esc(q)}">
+      ${fam.length ? `<section class="card">
+        <div class="sec-head"><h2>💛 My family</h2></div>
+        <ul class="list">${fam.map(row).join('')}</ul></section>` : ''}
+      <section class="card">
+        <div class="sec-head"><h2>Other people</h2><button class="btn small" data-action="add-person">+ Add</button></div>
+        ${others.length ? `<ul class="list">${others.map(row).join('')}</ul>`
+          : `<p class="empty">${q ? 'No matches.' : 'Add friends, neighbours, teachers and other parents, with a few details to jog your memory.'}</p>`}
       </section>`;
+  },
+
+  person() {
+    const p = find('people', state.arg);
+    if (!p) return views.people();
+    const topics = topicsFor(p);
+    const used = new Set(p.facts.map((f) => f.topic));
+    const unused = topics.filter((t) => !used.has(t));
+    const bday = db.dates.find((d) => d.type === 'birthday' && d.label.toLowerCase().includes(p.name.toLowerCase()));
+    const bdayNext = bday && datesWithNext().find((d) => d.id === bday.id);
+    const facts = [...p.facts].sort((a, b) => b.added - a.added);
+    return `
+      <a href="#people" class="back">‹ People</a>
+      <section class="person-hero">
+        <div class="avatar huge">${esc(p.emoji || initials(p.name))}</div>
+        <div style="flex:1"><h1>${esc(p.name)}</h1><p class="hint">${esc(p.relation || '')}</p></div>
+        <button class="btn small" data-action="edit-person" data-id="${p.id}">Edit</button>
+      </section>
+
+      <section class="card">
+        <div class="sec-head"><h2>Little details</h2><button class="btn small" data-action="add-fact" data-id="${p.id}">+ Add</button></div>
+        ${facts.length ? `<ul class="list">${facts.map((f) => `
+          <li class="item">
+            <div class="body" data-action="edit-fact" data-id="${p.id}" data-fact="${f.id}">
+              <div class="title" style="font-weight:500">${factLine(f)}</div>
+              <div class="sub">saved ${timeAgo(f.added)}</div>
+            </div>
+            ${f.topic ? (f.cardId && find('cards', f.cardId)
+              ? '<span class="tag good" title="In Practice">🎯</span>'
+              : `<button class="btn small ghost" data-action="practise-fact" data-id="${p.id}" data-fact="${f.id}" aria-label="Add to Practice">🎯+</button>`) : ''}
+          </li>`).join('')}</ul>`
+          : `<p class="empty">Nothing saved yet. Tap an idea below to start.</p>`}
+        ${unused.length ? `<p class="hint" style="margin-top:10px">Ideas:</p><div class="chips">${unused.map((t) =>
+          `<button class="chip" data-action="add-fact" data-id="${p.id}" data-topic="${esc(t)}">+ ${esc(t)}</button>`).join('')}</div>` : ''}
+      </section>
+
+      <section class="card">
+        <div class="sec-head"><h2>🎂 Birthday</h2></div>
+        ${bdayNext ? `<ul class="list">${dateItem(bdayNext)}</ul>`
+          : `<button class="btn" data-action="add-bday" data-id="${p.id}">+ Add ${esc(p.name)}'s birthday</button>`}
+      </section>
+
+      ${p.details ? `<section class="card"><div class="sec-head"><h2>Notes</h2></div><p style="white-space:pre-wrap;margin:0">${esc(p.details)}</p></section>` : ''}`;
   },
 
   dates() {
@@ -373,12 +514,13 @@ function reviewView() {
 function render() {
   $('#view').innerHTML = views[state.view]();
   document.querySelectorAll('.tabs a').forEach((a) =>
-    a.classList.toggle('active', a.dataset.tab === state.view));
+    a.classList.toggle('active', a.dataset.tab === (state.view === 'person' ? 'people' : state.view)));
 }
 
 function route() {
-  const name = location.hash.slice(1) || 'today';
+  const [name, arg = ''] = (location.hash.slice(1) || 'today').split('/');
   const next = views[name] ? name : 'today';
+  state.arg = decodeURIComponent(arg);
   if (next !== state.view) state.review = null;
   state.view = next;
   render();
@@ -470,8 +612,19 @@ const actions = {
     for (const key of Object.keys(db.doneLog)) if (key < cutoff) delete db.doneLog[key];
     save(); render();
   },
-  'add-place': () => editPlace(),
+  'add-place': (_, el) => editPlace(null, { pinned: el.dataset.pin === '1' }),
   'edit-place': (id) => editPlace(find('places', id)),
+  'move-item': (id) => openSpotPicker(find('places', id)),
+  'open-person': (id) => { location.hash = `#person/${id}`; },
+  'add-fact': (id, el) => editFact(find('people', id), null, el.dataset.topic),
+  'edit-fact': (id, el) => { const p = find('people', id); editFact(p, p.facts.find((f) => f.id === el.dataset.fact)); },
+  'practise-fact': (id, el) => {
+    const p = find('people', id); const f = p.facts.find((x) => x.id === el.dataset.fact);
+    const card = { id: uid(), front: `${p.name}: ${f.topic.toLowerCase()}?`, back: f.text, box: 0, due: dayKey() };
+    db.cards.push(card); f.cardId = card.id; save(); render();
+    toast(`Added to Practice 🎯`);
+  },
+  'add-bday': (id) => { const p = find('people', id); editDate(null, { label: `${p.name}'s birthday`, type: 'birthday' }); },
   'add-note': () => editNote(),
   'edit-note': (id) => editNote(find('notes', id)),
   'pin-note': (id) => { const n = find('notes', id); n.pinned = !n.pinned; save(); render(); },
@@ -515,7 +668,7 @@ const actions = {
   'import': () => $('#import-file').click(),
   'reset': () => {
     if (confirm('Erase everything on this device? This cannot be undone. Download a backup first if unsure.')) {
-      db = blank(); save(); toast('Erased'); location.hash = '#today'; render();
+      db = migrate(blank()); save(); toast('Erased'); location.hash = '#today'; render();
     }
   },
 };
@@ -551,19 +704,47 @@ function editRoutine(r) {
   });
 }
 
-function editPlace(p) {
+function setLocation(p, where) {
+  if (where !== p.location || !p.updated) p.updated = Date.now();
+  p.location = where;
+  p.history = [where, ...(p.history || []).filter((x) => x.toLowerCase() !== where.toLowerCase())].slice(0, 6);
+}
+
+// Big one-tap buttons for "I just put my keys…"
+function openSpotPicker(p) {
+  const spots = [...new Set([...(p.history || []), ...SPOTS])].slice(0, 10);
+  const dlg = $('#modal');
+  dlg.innerHTML = `<form class="form"><h2>${thingIcon(p.item)} Where are your ${esc(p.item.toLowerCase())} now?</h2>
+    <div class="chips big">${spots.map((s) => `<button type="button" class="chip ${s === p.location ? 'on' : ''}" data-spot="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+    <label class="field"><span>Somewhere else</span><input name="other" placeholder="e.g. Blue coat, hallway" autocomplete="off"></label>
+    <div class="form-actions"><button type="button" class="btn ghost" data-edit>Edit</button><span class="spacer"></span>
+    <button type="button" class="btn ghost" data-cancel>Cancel</button><button type="submit" class="btn primary">Save</button></div></form>`;
+  const done = (where) => {
+    if (!where) return;
+    setLocation(p, where); save(); dlg.close(); render();
+    toast(`${thingIcon(p.item)} ${p.item} → ${where}`);
+  };
+  dlg.querySelectorAll('[data-spot]').forEach((b) => { b.onclick = () => done(b.dataset.spot); });
+  $('form', dlg).onsubmit = (e) => { e.preventDefault(); done($('[name=other]', dlg).value.trim()); };
+  $('[data-cancel]', dlg).onclick = () => dlg.close();
+  $('[data-edit]', dlg).onclick = () => { dlg.close(); editPlace(p); };
+  dlg.showModal();
+}
+
+function editPlace(p, preset = {}) {
   const locations = [...new Set(db.places.map((x) => x.location))];
   openForm({
     title: p ? `Where is ${p.item}?` : 'Where did I put…',
     fields: [
       { name: 'item', label: 'Thing', required: true, value: p?.item, placeholder: 'Passport' },
       { name: 'location', label: 'Where it is', required: true, value: p?.location, placeholder: 'Top drawer of the desk', list: locations },
+      { name: 'pinned', label: 'Show on the Today screen (for things I lose often)', type: 'checkbox', value: p ? p.pinned : preset.pinned },
     ],
     onSave: (v) => {
       // saving the same item again updates it rather than creating a duplicate
       const existing = p || db.places.find((x) => x.item.toLowerCase() === v.item.toLowerCase());
-      if (existing) Object.assign(existing, v, { updated: Date.now() });
-      else db.places.push({ id: uid(), ...v, updated: Date.now() });
+      if (existing) { setLocation(existing, v.location); Object.assign(existing, { item: v.item, pinned: v.pinned }); }
+      else db.places.push({ id: uid(), ...v, history: [v.location], updated: Date.now() });
     },
     onDelete: p && (() => removeWithUndo('places', p.id, p.item)),
   });
@@ -588,7 +769,9 @@ function editPerson(p) {
     fields: [
       { name: 'name', label: 'Name', required: true, value: p?.name, placeholder: 'Sam Rivera' },
       { name: 'relation', label: 'How I know them', value: p?.relation, placeholder: 'Neighbour at no. 12, works with Jo' },
-      { name: 'details', label: 'Things to remember', type: 'textarea', value: p?.details,
+      { name: 'emoji', label: 'Picture (optional emoji)', value: p?.emoji, placeholder: '🙂' },
+      { name: 'family', label: 'Family (show on the Today screen)', type: 'checkbox', value: p?.family },
+      { name: 'details', label: 'Notes', type: 'textarea', value: p?.details,
         placeholder: 'Partner: Alex. Dog: Biscuit. Loves hiking. Last talked about her new job.' },
       ...(p ? [] : [{ name: 'practice', label: 'Add to Practice so I learn their name', type: 'checkbox', value: false }]),
     ],
@@ -596,23 +779,46 @@ function editPerson(p) {
       const { practice, ...rest } = v;
       if (p) Object.assign(p, rest, { updated: Date.now() });
       else {
-        db.people.push({ id: uid(), ...rest, updated: Date.now() });
+        db.people.push({ id: uid(), ...rest, facts: [], updated: Date.now() });
         const clue = [rest.relation, rest.details].filter(Boolean).join(' — ');
         if (practice && clue) db.cards.push({ id: uid(), front: `Who is this? ${clue}`, back: rest.name, box: 0, due: dayKey() });
         else if (practice) toast('Add how you know them so there is a clue to practise with.');
       }
     },
-    onDelete: p && (() => removeWithUndo('people', p.id, p.name)),
+    onDelete: p && (() => { removeWithUndo('people', p.id, p.name); location.hash = '#people'; }),
   });
 }
 
-function editDate(e) {
+function editFact(p, f, topic) {
+  openForm({
+    title: f ? `About ${p.name}` : `Something about ${p.name}`,
+    fields: [
+      { name: 'topic', label: 'Topic (optional)', value: f ? f.topic : (topic || ''), list: topicsFor(p), placeholder: 'Favourite food' },
+      { name: 'text', label: 'Detail', type: 'textarea', required: true, value: f?.text,
+        placeholder: topic ? '' : 'Loves mac and cheese, but no peas!' },
+    ],
+    onSave: (v) => {
+      if (f) Object.assign(f, v);
+      else p.facts.push({ id: uid(), ...v, added: Date.now() });
+      p.updated = Date.now();
+      const card = f?.cardId && find('cards', f.cardId);
+      if (card) { card.front = `${p.name}: ${v.topic.toLowerCase()}?`; card.back = v.text; }
+    },
+    onDelete: f && (() => {
+      const idx = p.facts.indexOf(f); p.facts.splice(idx, 1);
+      toast('Deleted detail', () => { p.facts.splice(idx, 0, f); save(); render(); });
+    }),
+  });
+  if (topic) $('#modal [name=text]').focus();
+}
+
+function editDate(e, preset = {}) {
   openForm({
     title: e ? 'Edit date' : 'New important date',
     fields: [
-      { name: 'label', label: 'What', required: true, value: e?.label, placeholder: "Mum's birthday" },
+      { name: 'label', label: 'What', required: true, value: e?.label ?? preset.label, placeholder: "Lexi's school play" },
       { name: 'date', label: 'Date', type: 'date', required: true, value: e?.date },
-      { name: 'type', label: 'Type', type: 'select', value: e?.type ?? 'birthday',
+      { name: 'type', label: 'Type', type: 'select', value: e?.type ?? preset.type ?? 'birthday',
         options: Object.entries(DATE_TYPES).map(([k, ico]) => [k, `${ico} ${k[0].toUpperCase()}${k.slice(1)}`]) },
       { name: 'yearly', label: 'Repeats every year', type: 'checkbox', value: e ? e.yearly : true },
     ],
@@ -690,7 +896,7 @@ document.addEventListener('change', (e) => {
     const data = JSON.parse(txt);
     if (!data || typeof data !== 'object' || !Array.isArray(data.reminders)) throw new Error('not a backup');
     if (!confirm('Replace everything on this device with this backup?')) return;
-    db = { ...blank(), ...data }; save(); toast('Backup restored ✓'); render();
+    db = migrate({ ...blank(), ...data }); save(); toast('Backup restored ✓'); render();
   }).catch(() => toast('That file is not a Memory backup.'));
   e.target.value = '';
 });
@@ -704,6 +910,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { db = load(); checkDue(); if (!$('#modal').open) render(); }
 });
 
+save(); // persist any one-time upgrades from migrate()
 route();
 checkDue();
 setInterval(checkDue, 30 * 1000);
