@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kelly's Memory</title>
+  <meta name="description" content="A gentle helper for remembering the day, people, places and things.">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Memory">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#today" class="brand">🧠 <span>Memory</span></a>
+    <a href="#settings" class="icon-btn" aria-label="Settings">⚙️</a>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <nav class="tabs" aria-label="Sections">
+    <a href="#today" data-tab="today"><span>🏠</span>Today</a>
+    <a href="#remember" data-tab="remember"><span>📝</span>Remember</a>
+    <a href="#people" data-tab="people"><span>👥</span>People</a>
+    <a href="#dates" data-tab="dates"><span>📅</span>Dates</a>
+    <a href="#practice" data-tab="practice"><span>🎯</span>Practice</a>
+  </nav>
+
+  <dialog id="modal"></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
